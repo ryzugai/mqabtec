@@ -172,7 +172,16 @@ let firebaseAuth: any = null;
 let firebaseDb: any = null;
 let isFirebaseActive = false;
 
-let parsedFirebaseConfig: any = firebaseConfigJson;
+let parsedFirebaseConfig: any = null;
+
+// Handle potential direct ESM json import OR commonjs wrapped default
+if (firebaseConfigJson) {
+  if (firebaseConfigJson.apiKey) {
+    parsedFirebaseConfig = firebaseConfigJson;
+  } else if ((firebaseConfigJson as any).default && (firebaseConfigJson as any).default.apiKey) {
+    parsedFirebaseConfig = (firebaseConfigJson as any).default;
+  }
+}
 
 // Fallback to __firebase_config if imported json is empty or non-existent
 if (!parsedFirebaseConfig || !parsedFirebaseConfig.apiKey) {
@@ -212,6 +221,8 @@ export default function App() {
   const [toast, setToast] = useState<{ show: boolean; message: string; type: 'info' | 'success' | 'error' }>({ show: false, message: '', type: 'info' });
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [dbStatus, setDbStatus] = useState<'testing' | 'online' | 'offline' | 'error' | 'local_only'>('testing');
+  const [dbErrorMessage, setDbErrorMessage] = useState<string | null>(null);
 
   // Initial persistence load
   useEffect(() => {
@@ -230,6 +241,7 @@ export default function App() {
   // Firebase Auth Setup
   useEffect(() => {
     if (!isFirebaseActive || !firebaseAuth) {
+      setDbStatus('local_only');
       return;
     }
 
@@ -254,15 +266,40 @@ export default function App() {
 
   // Firebase Real-time Firestore Synchronizer (Granular Documents Listener)
   useEffect(() => {
-    if (!isFirebaseActive || !firebaseDb || !authUser || !appUser) {
+    if (!isFirebaseActive || !firebaseDb) {
+      setDbStatus('local_only');
       return;
     }
+
+    if (!authUser || !appUser) {
+      setDbStatus('testing');
+      return;
+    }
+
+    setDbStatus('testing');
+
+    const testConnectionRef = doc(firebaseDb, 'artifacts', appId, 'public', 'connectivity', 'test_conn');
+    
+    // Quick write-read connection test to verify permissions & connection
+    const runConnectionTest = async () => {
+      try {
+        await setDoc(testConnectionRef, { lastPingAt: new Date().toISOString() }, { merge: true });
+        setDbStatus('online');
+      } catch (err: any) {
+        console.error("Firebase connection test write error:", err);
+        setDbStatus('error');
+        setDbErrorMessage(err.message || String(err));
+      }
+    };
+
+    runConnectionTest();
 
     const questionsCollRef = collection(firebaseDb, 'artifacts', appId, 'public', 'data', 'mqa02_questions');
     const assignmentsDocRef = doc(firebaseDb, 'artifacts', appId, 'public', 'data', 'mqa02_assignments', 'main');
 
     // Subscribe to all questions
     const unsubscribeQuestions = onSnapshot(questionsCollRef, (querySnapshot) => {
+      setDbStatus('online');
       setData(prevData => {
         const updatedData = { ...prevData };
         querySnapshot.forEach((docSnap) => {
@@ -280,24 +317,25 @@ export default function App() {
       });
     }, (error) => {
       console.error("Firebase questions sync error:", error);
+      setDbStatus('error');
+      setDbErrorMessage(`Gagal heret data kriteria: ${error.message}`);
       showToast('Gagal menyegerak data kriteria dari pelayan.', 'error');
     });
 
     // Subscribe to assignments
     const unsubscribeAssignments = onSnapshot(assignmentsDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const assignmentsData = docSnap.data().assignments;
-        setData(prevData => {
-          const updatedData = {
-            ...prevData,
-            assignments: assignmentsData || {}
-          };
-          localStorage.setItem('mqa02_data_local', JSON.stringify(updatedData));
-          return updatedData;
-        });
-      }
+      setData(prevData => {
+        const updatedData = {
+          ...prevData,
+          assignments: (docSnap.exists() ? docSnap.data().assignments : {}) || {}
+        };
+        localStorage.setItem('mqa02_data_local', JSON.stringify(updatedData));
+        return updatedData;
+      });
     }, (error) => {
       console.error("Firebase assignments sync error:", error);
+      setDbStatus('error');
+      setDbErrorMessage(`Gagal heret senarai tugas: ${error.message}`);
       showToast('Gagal menyegerak senarai tugas dari pelayan.', 'error');
     });
 
@@ -337,9 +375,12 @@ export default function App() {
       }
 
       setLastSaved(new Date().toLocaleTimeString('ms-MY'));
-    } catch (error) {
+      setDbStatus('online');
+    } catch (error: any) {
       console.error("Firebase save error:", error);
       showToast('Gagal menyimpan draf ke awan kualiti MQA.', 'error');
+      setDbStatus('error');
+      setDbErrorMessage(`Gagal menyimpan data: ${error.message || String(error)}`);
     } finally {
       setIsSaving(false);
     }
@@ -517,17 +558,54 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-4">
+              {/* Cloud Database Connection Health Status Badge */}
+              <div className="hidden sm:flex items-center mr-1">
+                {dbStatus === 'testing' && (
+                  <span className="flex items-center gap-1.5 text-blue-600 font-semibold bg-blue-50/80 px-2.5 py-1 rounded-full border border-blue-200 text-xs shadow-3xs animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping"></span>
+                    <span>Sistem Awan: Menyambung...</span>
+                  </span>
+                )}
+                {dbStatus === 'online' && (
+                  <span className="flex items-center gap-1.5 text-emerald-800 font-bold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200 text-xs shadow-3xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                    <span>Awan MQA: Real-time Sedia</span>
+                  </span>
+                )}
+                {dbStatus === 'offline' && (
+                  <span className="flex items-center gap-1.5 text-slate-600 font-medium bg-slate-100 px-2.5 py-1 rounded-full border border-slate-300 text-xs shadow-3xs">
+                    <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                    <span>Awan MQA: Offline</span>
+                  </span>
+                )}
+                {dbStatus === 'error' && (
+                  <span 
+                    title={dbErrorMessage || "Ralat tidak diketahui"}
+                    className="flex items-center gap-1.5 text-rose-800 font-bold bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200 text-xs shadow-3xs cursor-help hover:bg-rose-100 transition-colors"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                    <span>Awan MQA: Ralat Sambung</span>
+                  </span>
+                )}
+                {dbStatus === 'local_only' && (
+                  <span className="flex items-center gap-1.5 text-amber-800 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 text-xs shadow-3xs">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>Awan MQA: Mod Tempatan</span>
+                  </span>
+                )}
+              </div>
+
               <div className="hidden md:flex items-center gap-2 text-xs mr-4">
                 {isSaving ? (
                   <span className="flex items-center gap-1 text-amber-600 font-semibold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
                     <RefreshCw size={14} className="animate-spin" /> Menyimpan draf...
                   </span>
                 ) : lastSaved ? (
-                  <span className="flex items-center gap-1 text-slate-600 bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-full border border-emerald-200">
+                  <span className="flex items-center gap-1 text-neutral-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
                     <CheckCircle size={14} className="text-emerald-500" /> Auto-saved: {lastSaved}
                   </span>
                 ) : (
-                  <span className="text-slate-400">Penyimpanan automatik aktif</span>
+                  <span className="text-slate-400">Penyimpanan draf aktif</span>
                 )}
               </div>
               <div className="text-right hidden sm:block">
