@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Question": {
+      "title": "MQA02 Question State",
+      "description": "Represents the state of a single academic/MQA criteria question or general information field",
+      "type": "object",
+      "properties": {
+        "answer": { "type": "string", "description": "The HTML content of the answer" },
+        "files": {
+          "type": "array",
+          "description": "List of attached PDF evidence files"
+        },
+        "comment": { "type": "string", "description": "Notes/feedback from the Coordinator" },
+        "hodComment": { "type": "string", "description": "Remarks/feedback from the Head of Department" },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] },
+        "updatedBy": { "type": "string", "description": "Name of the user who last edited this question" },
+        "updatedAt": { "type": "string", "description": "Timestamp of the last edit" },
+        "lastAction": { "type": "string", "description": "Description of the last action taken (e.g., uploading files)" }
+      },
+      "required": ["answer", "files", "comment", "hodComment", "status"]
+    },
+    "Assignments": {
+      "title": "Module Handover Assignments",
+      "description": "Maps each form or criteria section to a list of assigned lecturer IDs",
+      "type": "object",
+      "properties": {
+        "assignments": {
+          "type": "object",
+          "description": "Mapping from area ID to list of lecturer IDs"
+        }
+      },
+      "required": ["assignments"]
+    }
+  },
+  "firestore": {
+    "/artifacts/{appId}/public/data/mqa02_questions/{questionId}": {
+      "schema": "Question",
+      "description": "The data for each criteria question in real-time sync"
+    },
+    "/artifacts/{appId}/public/data/mqa02_assignments/main": {
+      "schema": "Assignments",
+      "description": "The current lecturer assignment mapping for each section"
+    }
+  }
+}

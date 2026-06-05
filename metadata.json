@@ -1,0 +1,6 @@
+{
+  "name": "MQA02 BTEC Mode Industri",
+  "description": "Sistem Pengurusan & Pemantauan MQA02 BTEC Mode Industri untuk merekod maklumat HEP, maklumat program, reka bentuk, penilaian, kebajikan pelajar, kakitangan akademik, dan jaminan kualiti.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
