@@ -395,7 +395,6 @@ export default function App() {
   const handleLogout = (e?: React.MouseEvent) => {
     if (e) e.preventDefault();
     setAppUser(null);
-    setAuthUser(null);
     setActiveTab('dashboard'); 
     setToast({ show: false, message: '', type: 'info' });
   };
@@ -707,7 +706,9 @@ function RichTextEditor({ value, onChange, disabled, placeholder, minHeight = '1
 
   useEffect(() => {
     if (editorRef.current && value !== editorRef.current.innerHTML) {
-      editorRef.current.innerHTML = value || '';
+      if (document.activeElement !== editorRef.current) {
+        editorRef.current.innerHTML = value || '';
+      }
     }
   }, [value]);
 
@@ -1023,6 +1024,41 @@ function AssignmentList({ data, lecturers }: { data: MQA02Data; lecturers: UserC
     );
 }
 
+// --- ENHANCED COMMENT INPUT COMPONENT (With local buffering to prevent race conditions during typing) ---
+interface CommentAreaProps {
+  initialValue: string;
+  onSave: (val: string) => void;
+  disabled?: boolean;
+  placeholder: string;
+  className: string;
+}
+
+function CommentArea({ initialValue, onSave, disabled, placeholder, className }: CommentAreaProps) {
+  const [val, setVal] = useState(initialValue);
+
+  useEffect(() => {
+    setVal(initialValue);
+  }, [initialValue]);
+
+  const handleBlur = () => {
+    if (val !== initialValue) {
+      onSave(val);
+    }
+  };
+
+  return (
+    <textarea
+      className={className}
+      rows={2}
+      placeholder={placeholder}
+      value={val || ''}
+      disabled={disabled}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={handleBlur}
+    />
+  );
+}
+
 // --- FORM SECTION VIEWS ---
 interface FormSectionProps {
   user: UserConfig;
@@ -1275,12 +1311,11 @@ function FormSection({
                               <span>Nota Penyelaras</span>
                             </div>
                             {isCoord ? (
-                              <textarea
+                              <CommentArea
                                 className="w-full p-2 text-xs border border-blue-200 rounded-md focus:ring-1 focus:ring-blue-500 outline-none resize-none bg-white font-medium text-slate-700"
-                                rows={2}
                                 placeholder="Tinggalkan catatan pembetulan, kod rujukan MQA, dsb..."
-                                value={itemData.comment || ''}
-                                onChange={(e) => onUpdateComment(q.id, e.target.value, 'coordinator')}
+                                initialValue={itemData.comment || ''}
+                                onSave={(val) => onUpdateComment(q.id, val, 'coordinator')}
                               />
                             ) : (
                               <p className={`text-[11px] leading-relaxed font-medium ${itemData.comment ? 'text-slate-700' : 'text-slate-400 italic'}`}>
@@ -1296,12 +1331,11 @@ function FormSection({
                               <span>Ulasan Ketua Jabatan</span>
                             </div>
                             {isHOD ? (
-                              <textarea
+                              <CommentArea
                                 className="w-full p-2 text-xs border border-purple-200 rounded-md focus:ring-1 focus:ring-purple-500 outline-none resize-none bg-white font-medium text-slate-700"
-                                rows={2}
                                 placeholder="Masukkan maklum balas pengurusan tertinggi..."
-                                value={itemData.hodComment || ''}
-                                onChange={(e) => onUpdateComment(q.id, e.target.value, 'hod')}
+                                initialValue={itemData.hodComment || ''}
+                                onSave={(val) => onUpdateComment(q.id, val, 'hod')}
                               />
                             ) : (
                               <p className={`text-[11px] leading-relaxed font-medium ${itemData.hodComment ? 'text-slate-700' : 'text-slate-400 italic'}`}>
